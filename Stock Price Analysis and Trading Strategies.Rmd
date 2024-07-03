@@ -1,0 +1,128 @@
+---
+title: "Stock Price Analysis and Trading Strategies"
+output: html_document
+date: "2024-07-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(quantmod)
+library(PerformanceAnalytics)
+library(forecast)
+library(xts)
+```
+
+
+
+```{r }
+# Download stock data
+getSymbols(c("AAPL", "TSLA", "MSFT"), auto.assign=TRUE)
+
+# Convert to data frames and save
+AAPL_data <- data.frame(getSymbols("AAPL", auto.assign=F))
+TSLA_data <- data.frame(getSymbols("TSLA", auto.assign=F))
+MSFT_data <- data.frame(getSymbols("MSFT", auto.assign=F))
+
+# Assign column names
+colnames(AAPL_data) <- c("Open", "High", "Low", "Close", "Volume", "Adjusted")
+colnames(TSLA_data) <- c("Open", "High", "Low", "Close", "Volume", "Adjusted")
+colnames(MSFT_data) <- c("Open", "High", "Low", "Close", "Volume", "Adjusted")
+
+# Write to CSV
+write.csv(AAPL_data, "AAPL-Data.csv")
+write.csv(TSLA_data, "TSLA-Data.csv")
+write.csv(MSFT_data, "MSFT-Data.csv")
+```
+
+```{r }
+# Load data
+AAPL <- read.csv("AAPL-Data.csv", row.names = 1)
+TSLA <- read.csv("TSLA-Data.csv", row.names = 1)
+MSFT <- read.csv("MSFT-Data.csv", row.names = 1)
+
+# Convert data to xts objects
+AAPL_xts <- as.xts(AAPL[, "Adjusted"], order.by = as.Date(row.names(AAPL)))
+TSLA_xts <- as.xts(TSLA[, "Adjusted"], order.by = as.Date(row.names(TSLA)))
+MSFT_xts <- as.xts(MSFT[, "Adjusted"], order.by = as.Date(row.names(MSFT)))
+
+# Plotting
+plot(AAPL_xts, main = "AAPL Adjusted Closing Prices", major.ticks = "years", minor.ticks = FALSE)
+plot(TSLA_xts, main = "TSLA Adjusted Closing Prices", major.ticks = "years", minor.ticks = FALSE)
+plot(MSFT_xts, main = "MSFT Adjusted Closing Prices", major.ticks = "years", minor.ticks = FALSE)
+```
+The adjusted closing prices for AAPL, TSLA, and MSFT reveal strong growth, especially after 2010. TSLA's dramatic increase post-2019 highlights its rapid market rise due to milestones in electric vehicle production.
+
+```{r }
+# Calculate daily returns
+AAPL_returns <- dailyReturn(Ad(as.xts(AAPL)), type="arithmetic")
+TSLA_returns <- dailyReturn(Ad(as.xts(TSLA)), type="arithmetic")
+MSFT_returns <- dailyReturn(Ad(as.xts(MSFT)), type="arithmetic")
+
+# Plot cumulative returns
+plot(cumprod(1 + AAPL_returns), main="Cumulative Returns - AAPL", type='l')
+plot(cumprod(1 + TSLA_returns), main="Cumulative Returns - TSLA", type='l')
+plot(cumprod(1 + MSFT_returns), main="Cumulative Returns - MSFT", type='l')
+```
+The cumulative returns plots for AAPL, TSLA, and MSFT illustrate the compounded growth of an investment over time. They show substantial long-term gains, with AAPL and MSFT exhibiting steady growth post-2010, while TSLA demonstrates a sharp increase starting around 2019, reflecting significant investment returns due to their respective market performances.
+
+```{r }
+# Compare cumulative returns for AAPL
+compareAdtoCl <- data.frame(apply(apply(AAPL[, c("Close", "Adjusted")], 2, log), 2, diff))
+compareAdtoCumSum <- data.frame(apply(compareAdtoCl, 2, cumsum))
+plot(compareAdtoCumSum[, 1], type='l', main="Cumulative Returns Comparison for AAPL", ylab="Cumulative Returns", xlab="Index")
+lines(compareAdtoCumSum[, 2], type='l', col='blue')
+legend("topleft", legend=c("Close", "Adjusted"), col=c("black", "blue"), lty=1)
+
+# Performance Summary for AAPL
+data <- as.xts(compareAdtoCl)
+data <- exp(data) - 1
+charts.PerformanceSummary(data, main="Performance Summary - AAPL")
+
+# Compare cumulative returns for MSFT
+compareAdtoCl_MSFT <- data.frame(apply(apply(MSFT[, c("Close", "Adjusted")], 2, log), 2, diff))
+compareAdtoCumSum_MSFT <- data.frame(apply(compareAdtoCl_MSFT, 2, cumsum))
+plot(compareAdtoCumSum_MSFT[, 1], type='l', main="Cumulative Returns Comparison for MSFT", ylab="Cumulative Returns", xlab="Index")
+lines(compareAdtoCumSum_MSFT[, 2], type='l', col='blue')
+legend("topleft", legend=c("Close", "Adjusted"), col=c("black", "blue"), lty=1)
+
+# Performance Summary for MSFT
+data_MSFT <- as.xts(compareAdtoCl_MSFT)
+data_MSFT <- exp(data_MSFT) - 1
+charts.PerformanceSummary(data_MSFT, main="Performance Summary - MSFT")
+
+# Compare AAPL and MSFT
+AAPL_returns <- dailyReturn(Ad(as.xts(AAPL)), type="arithmetic")
+MSFT_returns <- dailyReturn(Ad(as.xts(MSFT)), type="arithmetic")
+colnames(AAPL_returns) <- "AAPL"
+colnames(MSFT_returns) <- "MSFT"
+AAPLvsMSFT <- merge(AAPL_returns, MSFT_returns, all = F)
+charts.PerformanceSummary(AAPLvsMSFT)
+table.AnnualizedReturns(AAPLvsMSFT, scale = 252, Rf = 0.005 / 252)
+```
+The plot of cumulative returns and performance summaries show that both AAPL and MSFT have experienced significant growth over the period, with AAPL generally outperforming MSFT. The annualized returns table further confirms AAPL's superior performance in terms of both returns and risk-adjusted returns. However, AAPL also exhibits higher volatility, which is reflected in its higher standard deviation.
+
+```{r }
+# Calculate rolling variance
+AAPL_roll_var <- rollapply(AAPL_returns, width=30, FUN=var, by.column=TRUE, fill=NA)
+plot(AAPL_roll_var, main="Rolling Variance - AAPL", type='l')
+
+# Risk management using VaR
+VaR(AAPL_returns, p=0.95, method="historical")
+ES(AAPL_returns, p=0.95, method="historical")
+```
+The rolling variance plot indicates periods of high and low volatility in AAPL's returns, with significant spikes during major market disruptions like the 2008 financial crisis and the 2020 COVID-19 pandemic. The risk management metrics, VaR and ES, provide insights into potential daily losses, with VaR indicating a 2.94% maximum expected loss at 95% confidence and ES showing an average loss of 4.56% on days when losses exceed the VaR threshold. 
+
+```{r }
+# Fit ARIMA model
+AAPL_arima <- auto.arima(Ad(as.xts(AAPL)))
+summary(AAPL_arima)
+
+# Forecast
+AAPL_forecast <- forecast(AAPL_arima, h=30)
+plot(AAPL_forecast)
+```
+The ARIMA(5,2,0) model for AAPL predicts a continued upward trend with low forecast errors, indicating a good fit. The prediction intervals highlight the uncertainty but suggest overall price growth in the next 30 days.
